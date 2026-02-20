@@ -138,6 +138,31 @@ func (s *Server) handleGetChatMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, msgs)
 }
 
+type replyRequest struct {
+	To             string `json:"to"`
+	Message        string `json:"message"`
+	QuoteMessageID string `json:"quote_message_id,omitempty"`
+}
+
+func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
+	var req replyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.To == "" || req.Message == "" {
+		writeError(w, http.StatusBadRequest, "to and message are required")
+		return
+	}
+
+	if err := s.Client.SendText(r.Context(), req.To, req.Message); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
 func queryInt(r *http.Request, key string, defaultVal int) int {
 	v := r.URL.Query().Get(key)
 	if v == "" {

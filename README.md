@@ -44,6 +44,7 @@ journalctl --user -u openclaw-whatsapp -f
 - **Webhook delivery** — incoming messages POST to your endpoint
 - **Full-text search** — SQLite FTS5 across all messages
 - **Media handling** — auto-downloads images, videos, audio, documents
+- **Agent mode** — trigger OpenClaw agents on incoming messages (command or HTTP)
 - **Message deduplication** — no duplicate webhooks
 - **Single binary** — pure Go, no CGO, cross-compiles everywhere
 
@@ -57,6 +58,7 @@ journalctl --user -u openclaw-whatsapp -f
 | `POST` | `/logout` | Unlink device |
 | `POST` | `/send/text` | Send text message `{"to": "+...", "message": "..."}` |
 | `POST` | `/send/file` | Send file (multipart: `file`, `to`, `caption`) |
+| `POST` | `/reply` | Agent reply `{"to": "jid", "message": "...", "quote_message_id": "..."}` |
 | `GET` | `/messages?chat=JID&limit=50` | Get messages for a chat |
 | `GET` | `/messages/search?q=keyword` | Full-text search |
 | `GET` | `/chats` | List all chats with last message |
@@ -78,6 +80,43 @@ auto_reconnect: true
 reconnect_interval: 30s
 log_level: info
 ```
+
+### Agent Mode
+
+Trigger an OpenClaw agent whenever a WhatsApp message arrives. Supports command execution or HTTP POST:
+
+```yaml
+agent:
+  enabled: true
+  mode: "command"         # "command" or "http"
+  command: "openclaw gateway wake --text 'WhatsApp from {name} ({from}): {message}' --mode now"
+  http_url: ""            # POST endpoint for "http" mode
+  reply_endpoint: "http://localhost:8555/reply"  # so agent knows where to send replies
+  ignore_from_me: true    # don't trigger on own messages
+  dm_only: false          # only trigger on DMs, not groups
+  timeout: 30s            # command/HTTP timeout
+```
+
+**Command mode** — runs a shell command with template variables:
+- `{from}` — sender JID
+- `{name}` — sender push name
+- `{message}` — message text
+- `{chat_jid}` — chat JID
+- `{type}` — message type (text, image, etc.)
+- `{is_group}` — "true" or "false"
+- `{group_name}` — group name (empty for DMs)
+- `{message_id}` — WhatsApp message ID
+
+**HTTP mode** — POSTs JSON to `http_url` with all message details plus `reply_endpoint`.
+
+When agent triggers, a typing indicator is shown in the chat until the agent completes.
+
+Agents can reply via `POST /reply`:
+```json
+{"to": "971558762351@s.whatsapp.net", "message": "Hello!", "quote_message_id": "optional"}
+```
+
+Environment variables: `OC_WA_AGENT_ENABLED`, `OC_WA_AGENT_MODE`, `OC_WA_AGENT_COMMAND`, `OC_WA_AGENT_HTTP_URL`, `OC_WA_AGENT_REPLY_ENDPOINT`, `OC_WA_AGENT_TIMEOUT`.
 
 Environment variables use `OC_WA_` prefix: `OC_WA_PORT`, `OC_WA_WEBHOOK_URL`, etc.
 

@@ -16,12 +16,12 @@ import (
 
 // MakeEventHandler returns an event handler function suitable for use with
 // whatsmeow's AddEventHandler. It processes incoming WhatsApp events, persists
-// messages to msgStore, and forwards them to the webhook.
-func MakeEventHandler(client *Client, msgStore *store.MessageStore, webhook *WebhookSender, log *slog.Logger) func(evt interface{}) {
+// messages to msgStore, forwards them to the webhook, and triggers the agent.
+func MakeEventHandler(client *Client, msgStore *store.MessageStore, webhook *WebhookSender, agent *AgentTrigger, log *slog.Logger) func(evt interface{}) {
 	return func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
-			handleMessage(client, v, msgStore, webhook, log)
+			handleMessage(client, v, msgStore, webhook, agent, log)
 
 		case *events.Connected:
 			client.mu.Lock()
@@ -59,7 +59,7 @@ func MakeEventHandler(client *Client, msgStore *store.MessageStore, webhook *Web
 // handleMessage processes a single incoming WhatsApp message event. It skips
 // messages sent by the current user and status broadcasts, extracts content
 // based on message type, persists to the message store, and sends a webhook.
-func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageStore, webhook *WebhookSender, log *slog.Logger) {
+func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageStore, webhook *WebhookSender, agent *AgentTrigger, log *slog.Logger) {
 	// Skip messages from ourselves.
 	if msg.Info.IsFromMe {
 		return
@@ -191,6 +191,11 @@ func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageS
 
 	if err := webhook.Send(payload); err != nil {
 		log.Error("failed to send webhook", "error", err, "message_id", msg.Info.ID)
+	}
+
+	// Trigger agent (async — does not block).
+	if agent != nil {
+		agent.Trigger(client, payload)
 	}
 
 	log.Info("message processed",

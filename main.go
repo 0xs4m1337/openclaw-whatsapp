@@ -141,8 +141,24 @@ func runStart(configPath string) error {
 	}
 	webhook := bridge.NewWebhookSender(cfg.WebhookURL, webhookFilters, log)
 
+	// 5b. Create agent trigger
+	agent := bridge.NewAgentTrigger(
+		cfg.Agent.Enabled,
+		cfg.Agent.Mode,
+		cfg.Agent.Command,
+		cfg.Agent.HTTPURL,
+		cfg.Agent.ReplyEndpoint,
+		cfg.Agent.IgnoreFromMe,
+		cfg.Agent.DMOnly,
+		cfg.Agent.Timeout.Duration,
+		log,
+	)
+	if cfg.Agent.Enabled {
+		log.Info("agent mode enabled", "mode", cfg.Agent.Mode)
+	}
+
 	// 6. Wire event handler
-	handler := bridge.MakeEventHandler(client, msgStore, webhook, log)
+	handler := bridge.MakeEventHandler(client, msgStore, webhook, agent, log)
 	client.SetEventHandler(handler)
 
 	// 7. Connect to WhatsApp

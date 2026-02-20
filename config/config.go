@@ -19,6 +19,19 @@ type WebhookFilters struct {
 	IgnoreGroups []string `yaml:"ignore_groups"`
 }
 
+// AgentConfig controls the OpenClaw agent integration. When enabled, incoming
+// messages trigger an agent via shell command or HTTP POST.
+type AgentConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	Mode          string   `yaml:"mode"`           // "command" or "http"
+	Command       string   `yaml:"command"`        // shell command template (command mode)
+	HTTPURL       string   `yaml:"http_url"`       // endpoint to POST to (http mode)
+	ReplyEndpoint string   `yaml:"reply_endpoint"` // bridge reply URL sent to agent
+	IgnoreFromMe  bool     `yaml:"ignore_from_me"`
+	DMOnly        bool     `yaml:"dm_only"`
+	Timeout       Duration `yaml:"timeout"`
+}
+
 // Config holds all application configuration values.
 type Config struct {
 	Port               int            `yaml:"port"`
@@ -28,6 +41,7 @@ type Config struct {
 	AutoReconnect      bool           `yaml:"auto_reconnect"`
 	ReconnectInterval  Duration       `yaml:"reconnect_interval"`
 	LogLevel           string         `yaml:"log_level"`
+	Agent              AgentConfig    `yaml:"agent"`
 }
 
 // Duration is a wrapper around time.Duration that supports YAML unmarshalling
@@ -69,6 +83,13 @@ func defaults() *Config {
 		AutoReconnect:     true,
 		ReconnectInterval: Duration{30 * time.Second},
 		LogLevel:          "info",
+		Agent: AgentConfig{
+			Enabled:      false,
+			Mode:         "command",
+			IgnoreFromMe: true,
+			DMOnly:       false,
+			Timeout:      Duration{30 * time.Second},
+		},
 	}
 }
 
@@ -121,6 +142,33 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.AutoReconnect = true
 		case "false", "0", "no":
 			cfg.AutoReconnect = false
+		}
+	}
+
+	// Agent overrides
+	if v := os.Getenv("OC_WA_AGENT_ENABLED"); v != "" {
+		switch strings.ToLower(v) {
+		case "true", "1", "yes":
+			cfg.Agent.Enabled = true
+		case "false", "0", "no":
+			cfg.Agent.Enabled = false
+		}
+	}
+	if v := os.Getenv("OC_WA_AGENT_MODE"); v != "" {
+		cfg.Agent.Mode = v
+	}
+	if v := os.Getenv("OC_WA_AGENT_COMMAND"); v != "" {
+		cfg.Agent.Command = v
+	}
+	if v := os.Getenv("OC_WA_AGENT_HTTP_URL"); v != "" {
+		cfg.Agent.HTTPURL = v
+	}
+	if v := os.Getenv("OC_WA_AGENT_REPLY_ENDPOINT"); v != "" {
+		cfg.Agent.ReplyEndpoint = v
+	}
+	if v := os.Getenv("OC_WA_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Agent.Timeout = Duration{d}
 		}
 	}
 }

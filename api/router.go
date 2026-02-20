@@ -40,6 +40,7 @@ func NewRouter(s *Server) http.Handler {
 	// Messaging
 	r.Post("/send/text", s.handleSendText)
 	r.Post("/send/file", s.handleSendFile)
+	r.Post("/reply", s.handleReply)
 	r.Get("/messages", s.handleGetMessages)
 	r.Get("/messages/search", s.handleSearchMessages)
 
