@@ -5,3 +5,4 @@ openclaw-whatsapp
 data/
 .env
 firebase-debug.log
+dist/
