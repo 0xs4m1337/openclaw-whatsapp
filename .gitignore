@@ -1,0 +1,7 @@
+openclaw-whatsapp
+*.db
+*.db-wal
+*.db-shm
+data/
+.env
+firebase-debug.log
