@@ -10,7 +10,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o openclaw-whatsapp .
+RUN CGO_ENABLED=1 go build -tags "sqlite_fts5" -ldflags="-s -w" -o openclaw-whatsapp .
 
 FROM debian:bookworm-slim
 
