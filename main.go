@@ -148,8 +148,11 @@ func runStart(configPath string) error {
 		cfg.Agent.Command,
 		cfg.Agent.HTTPURL,
 		cfg.Agent.ReplyEndpoint,
+		cfg.Agent.SystemPrompt,
 		cfg.Agent.IgnoreFromMe,
 		cfg.Agent.DMOnly,
+		cfg.Agent.Allowlist,
+		cfg.Agent.Blocklist,
 		cfg.Agent.Timeout.Duration,
 		log,
 	)

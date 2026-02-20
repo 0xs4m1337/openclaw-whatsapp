@@ -27,9 +27,12 @@ type AgentConfig struct {
 	Command       string   `yaml:"command"`        // shell command template (command mode)
 	HTTPURL       string   `yaml:"http_url"`       // endpoint to POST to (http mode)
 	ReplyEndpoint string   `yaml:"reply_endpoint"` // bridge reply URL sent to agent
+	SystemPrompt  string   `yaml:"system_prompt"`  // custom system prompt for the agent personality
 	IgnoreFromMe  bool     `yaml:"ignore_from_me"`
 	DMOnly        bool     `yaml:"dm_only"`
 	Timeout       Duration `yaml:"timeout"`
+	Allowlist     []string `yaml:"allowlist"`      // only respond to these JIDs/numbers (empty = all)
+	Blocklist     []string `yaml:"blocklist"`      // never respond to these JIDs/numbers
 }
 
 // Config holds all application configuration values.
@@ -170,6 +173,9 @@ func applyEnvOverrides(cfg *Config) {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.Agent.Timeout = Duration{d}
 		}
+	}
+	if v := os.Getenv("OC_WA_AGENT_SYSTEM_PROMPT"); v != "" {
+		cfg.Agent.SystemPrompt = v
 	}
 }
 

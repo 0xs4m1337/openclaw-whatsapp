@@ -20,8 +20,11 @@ type AgentTrigger struct {
 	command       string
 	httpURL       string
 	replyEndpoint string
+	systemPrompt  string
 	ignoreFromMe  bool
 	dmOnly        bool
+	allowlist     map[string]bool
+	blocklist     map[string]bool
 	timeout       time.Duration
 	client        *http.Client
 	log           *slog.Logger
@@ -39,23 +42,47 @@ type AgentPayload struct {
 	MessageID     string `json:"message_id"`
 	Timestamp     int64  `json:"timestamp"`
 	ReplyEndpoint string `json:"reply_endpoint,omitempty"`
+	SystemPrompt  string `json:"system_prompt,omitempty"`
 }
 
 // NewAgentTrigger creates a new AgentTrigger. If enabled is false, Trigger is a
 // no-op.
-func NewAgentTrigger(enabled bool, mode, command, httpURL, replyEndpoint string, ignoreFromMe, dmOnly bool, timeout time.Duration, log *slog.Logger) *AgentTrigger {
+func NewAgentTrigger(enabled bool, mode, command, httpURL, replyEndpoint, systemPrompt string, ignoreFromMe, dmOnly bool, allowlist, blocklist []string, timeout time.Duration, log *slog.Logger) *AgentTrigger {
+	al := make(map[string]bool)
+	for _, v := range allowlist {
+		al[normalizeNumber(v)] = true
+	}
+	bl := make(map[string]bool)
+	for _, v := range blocklist {
+		bl[normalizeNumber(v)] = true
+	}
 	return &AgentTrigger{
 		enabled:       enabled,
 		mode:          mode,
 		command:       command,
 		httpURL:       httpURL,
 		replyEndpoint: replyEndpoint,
+		systemPrompt:  systemPrompt,
 		ignoreFromMe:  ignoreFromMe,
 		dmOnly:        dmOnly,
+		allowlist:     al,
+		blocklist:     bl,
 		timeout:       timeout,
 		client:        &http.Client{Timeout: timeout},
 		log:           log,
 	}
+}
+
+// normalizeNumber strips @s.whatsapp.net suffix for comparison.
+func normalizeNumber(s string) string {
+	s = strings.TrimSuffix(s, "@s.whatsapp.net")
+	s = strings.TrimPrefix(s, "+")
+	return s
+}
+
+// SystemPrompt returns the configured system prompt.
+func (a *AgentTrigger) SystemPrompt() string {
+	return a.systemPrompt
 }
 
 // Trigger fires the agent for an incoming message. It sends a typing indicator,
@@ -68,6 +95,16 @@ func (a *AgentTrigger) Trigger(client *Client, payload *WebhookPayload) {
 	// Apply filters.
 	if a.dmOnly && payload.ChatType == "group" {
 		a.log.Debug("agent skipping group message (dm_only)", "message_id", payload.MessageID)
+		return
+	}
+
+	sender := normalizeNumber(payload.From)
+	if len(a.blocklist) > 0 && a.blocklist[sender] {
+		a.log.Debug("agent skipping blocklisted sender", "from", payload.From, "message_id", payload.MessageID)
+		return
+	}
+	if len(a.allowlist) > 0 && !a.allowlist[sender] {
+		a.log.Debug("agent skipping non-allowlisted sender", "from", payload.From, "message_id", payload.MessageID)
 		return
 	}
 
@@ -129,6 +166,7 @@ func (a *AgentTrigger) triggerHTTP(payload *WebhookPayload) {
 		MessageID:     payload.MessageID,
 		Timestamp:     payload.Timestamp,
 		ReplyEndpoint: a.replyEndpoint,
+		SystemPrompt:  a.systemPrompt,
 	}
 
 	body, err := json.Marshal(agentPayload)
@@ -172,14 +210,15 @@ func (a *AgentTrigger) expandTemplate(tmpl string, p *WebhookPayload) string {
 	}
 
 	replacements := map[string]string{
-		"{from}":       shellEscape(p.From),
-		"{name}":       shellEscape(p.Name),
-		"{message}":    shellEscape(p.Message),
-		"{chat_jid}":   shellEscape(p.From),
-		"{type}":       shellEscape(p.Type),
-		"{is_group}":   isGroup,
-		"{group_name}": shellEscape(p.GroupName),
-		"{message_id}": shellEscape(p.MessageID),
+		"{from}":          shellEscape(p.From),
+		"{name}":          shellEscape(p.Name),
+		"{message}":       shellEscape(p.Message),
+		"{chat_jid}":      shellEscape(p.From),
+		"{type}":          shellEscape(p.Type),
+		"{is_group}":      isGroup,
+		"{group_name}":    shellEscape(p.GroupName),
+		"{message_id}":    shellEscape(p.MessageID),
+		"{system_prompt}": shellEscape(a.systemPrompt),
 	}
 
 	result := tmpl
