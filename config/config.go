@@ -177,6 +177,18 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("OC_WA_AGENT_SYSTEM_PROMPT"); v != "" {
 		cfg.Agent.SystemPrompt = v
 	}
+	if v := os.Getenv("OC_WA_AGENT_ALLOWLIST"); v != "" {
+		cfg.Agent.Allowlist = strings.Split(v, ",")
+		for i := range cfg.Agent.Allowlist {
+			cfg.Agent.Allowlist[i] = strings.TrimSpace(cfg.Agent.Allowlist[i])
+		}
+	}
+	if v := os.Getenv("OC_WA_AGENT_BLOCKLIST"); v != "" {
+		cfg.Agent.Blocklist = strings.Split(v, ",")
+		for i := range cfg.Agent.Blocklist {
+			cfg.Agent.Blocklist[i] = strings.TrimSpace(cfg.Agent.Blocklist[i])
+		}
+	}
 }
 
 // EnsureDataDir creates the DataDir and its media subdirectory if they

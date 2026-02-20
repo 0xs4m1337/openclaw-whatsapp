@@ -1,15 +1,11 @@
 #!/bin/bash
 # Bridge agent trigger → spawns isolated agentTurn that auto-replies on WhatsApp
-# Called with: wa-notify.sh '{name}' '{message}' '{chat_jid}' '{system_prompt}'
+# Called with: wa-notify.sh '{name}' '{message}' '{chat_jid}'
+# System prompt comes via OC_WA_SYSTEM_PROMPT env var (set by bridge)
 NAME="$1"
 MSG="$2"
 JID="$3"
-SYSTEM_PROMPT="$4"
-
-# Default system prompt if none configured
-if [ -z "$SYSTEM_PROMPT" ]; then
-    SYSTEM_PROMPT="You are a helpful WhatsApp assistant. Be concise and natural."
-fi
+SYSTEM_PROMPT="${OC_WA_SYSTEM_PROMPT:-You are a helpful WhatsApp assistant. Be concise and natural.}"
 
 # JSON-escape
 MSG_ESC=$(printf '%s' "$MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")

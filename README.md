@@ -92,7 +92,40 @@ agent:
   timeout: 30s                                 # command/HTTP timeout
 ```
 
-Environment variables: `OC_WA_AGENT_ENABLED`, `OC_WA_AGENT_MODE`, `OC_WA_AGENT_COMMAND`, `OC_WA_AGENT_HTTP_URL`, `OC_WA_AGENT_REPLY_ENDPOINT`, `OC_WA_AGENT_TIMEOUT`.
+Environment variables: `OC_WA_AGENT_ENABLED`, `OC_WA_AGENT_MODE`, `OC_WA_AGENT_COMMAND`, `OC_WA_AGENT_HTTP_URL`, `OC_WA_AGENT_REPLY_ENDPOINT`, `OC_WA_AGENT_TIMEOUT`, `OC_WA_AGENT_SYSTEM_PROMPT`, `OC_WA_AGENT_ALLOWLIST`, `OC_WA_AGENT_BLOCKLIST`.
+
+### System Prompt
+
+The `system_prompt` field controls the agent's personality and behavior. It's passed to the agent command via the `OC_WA_SYSTEM_PROMPT` environment variable (not as a command argument — avoids shell escaping issues).
+
+```yaml
+agent:
+  enabled: true
+  mode: "command"
+  command: "./scripts/wa-notify.sh '{name}' '{message}' '{from}'"
+  system_prompt: |
+    You are a helpful customer service agent for Acme Corp.
+    Be friendly, professional, and concise.
+    If asked about pricing, direct them to https://acme.com/pricing
+```
+
+The system prompt can include tool instructions — if your OpenClaw instance has Google Calendar, messaging, or other integrations, the agent can use them directly. See `examples/setupclawd-agent.yaml` for a real-world example that books calendar meetings and sends Telegram notifications.
+
+### Allowlist / Blocklist
+
+Restrict which phone numbers the agent responds to:
+
+```yaml
+agent:
+  allowlist: ["971586971337", "1234567890"]  # only respond to these numbers
+  blocklist: ["spammer123"]                   # never respond to these
+```
+
+- **Allowlist** — if non-empty, only these numbers get responses (empty = respond to all)
+- **Blocklist** — these numbers are always ignored
+- Numbers can be with or without the `@s.whatsapp.net` suffix
+
+Environment variables (comma-separated): `OC_WA_AGENT_ALLOWLIST=971586971337,1234567890`, `OC_WA_AGENT_BLOCKLIST=spammer123`.
 
 ### Command Mode
 
@@ -237,6 +270,14 @@ The included `scripts/wa-notify.sh` does the following:
 5. The agent replies via `openclaw-whatsapp send <JID> <reply>`
 
 You can customize the prompt, model (`anthropic/claude-sonnet-4-5` by default), and behavior.
+
+---
+
+## Example Configs
+
+See the `examples/` directory for ready-to-use configurations:
+
+- **`examples/setupclawd-agent.yaml`** — A real-world customer-facing agent for SetupClawd (OpenClaw deployment service). Demonstrates system prompt with pricing info, Google Calendar booking via Composio, Telegram lead notifications, and bilingual (Arabic/English) support.
 
 ---
 

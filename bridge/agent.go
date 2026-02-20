@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -139,6 +140,7 @@ func (a *AgentTrigger) triggerCommand(payload *WebhookPayload) {
 	a.log.Info("agent triggering command", "command", cmd, "message_id", payload.MessageID)
 
 	proc := exec.CommandContext(ctx, "sh", "-c", cmd)
+	proc.Env = append(os.Environ(), "OC_WA_SYSTEM_PROMPT="+a.systemPrompt)
 	output, err := proc.CombinedOutput()
 	if err != nil {
 		a.log.Error("agent command failed", "error", err, "output", string(output), "message_id", payload.MessageID)
