@@ -5,7 +5,7 @@ WhatsApp bridge for [OpenClaw](https://openclaw.ai) agents. Single Go binary —
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openclaw/whatsapp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/0xs4m1337/openclaw-whatsapp/main/install.sh | bash
 ```
 
 Or build from source:
@@ -48,6 +48,303 @@ journalctl --user -u openclaw-whatsapp -f
 - **Message deduplication** — no duplicate webhooks
 - **Single binary** — pure Go, no CGO, cross-compiles everywhere
 
+---
+
+## Configuration
+
+Create `config.yaml` in the working directory or use environment variables (`OC_WA_` prefix):
+
+```yaml
+port: 8555
+data_dir: ~/.openclaw-whatsapp
+webhook_url: http://localhost:1337/webhook/whatsapp
+webhook_filters:
+  dm_only: false
+  ignore_groups: []
+auto_reconnect: true
+reconnect_interval: 30s
+log_level: info
+```
+
+Environment variables: `OC_WA_PORT`, `OC_WA_WEBHOOK_URL`, `OC_WA_DATA_DIR`, etc.
+
+---
+
+## Agent Mode
+
+Agent mode lets the bridge trigger an AI agent whenever a WhatsApp message arrives. The flow:
+
+```
+WhatsApp message → Bridge receives it → Triggers command or HTTP POST → Agent processes → Replies via POST /reply
+```
+
+### Configuration
+
+```yaml
+agent:
+  enabled: true
+  mode: "command"                              # "command" or "http"
+  command: "./scripts/wa-notify.sh '{name}' '{message}' '{from}'"
+  http_url: ""                                 # POST endpoint for "http" mode
+  reply_endpoint: "http://localhost:8555/reply" # so agent knows where to reply
+  ignore_from_me: true                         # don't trigger on own messages
+  dm_only: true                                # only trigger on DMs, not groups
+  timeout: 30s                                 # command/HTTP timeout
+```
+
+Environment variables: `OC_WA_AGENT_ENABLED`, `OC_WA_AGENT_MODE`, `OC_WA_AGENT_COMMAND`, `OC_WA_AGENT_HTTP_URL`, `OC_WA_AGENT_REPLY_ENDPOINT`, `OC_WA_AGENT_TIMEOUT`.
+
+### Command Mode
+
+Runs a shell command with template variables substituted:
+
+| Variable | Description |
+|----------|-------------|
+| `{from}` | Sender JID (e.g. `971558762351@s.whatsapp.net`) |
+| `{name}` | Sender push name |
+| `{message}` | Message text |
+| `{chat_jid}` | Chat JID |
+| `{type}` | Message type (`text`, `image`, etc.) |
+| `{is_group}` | `"true"` or `"false"` |
+| `{group_name}` | Group name (empty for DMs) |
+| `{message_id}` | WhatsApp message ID |
+
+When the command runs, a **typing indicator** is shown in the chat until the command completes.
+
+### HTTP Mode
+
+POSTs a JSON payload to `http_url`:
+
+```json
+{
+  "from": "971558762351@s.whatsapp.net",
+  "name": "Sam",
+  "message": "Hey!",
+  "chat_jid": "971558762351@s.whatsapp.net",
+  "type": "text",
+  "is_group": false,
+  "group_name": "",
+  "message_id": "ABC123",
+  "timestamp": 1708387200,
+  "reply_endpoint": "http://localhost:8555/reply"
+}
+```
+
+The agent can use the included `reply_endpoint` to send a response.
+
+### Reply Endpoint
+
+Agents reply via `POST /reply`:
+
+```bash
+curl -X POST http://localhost:8555/reply \
+  -H "Content-Type: application/json" \
+  -d '{"to": "971558762351@s.whatsapp.net", "message": "Hello!", "quote_message_id": "ABC123"}'
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `to` | Yes | Recipient JID |
+| `message` | Yes | Reply text |
+| `quote_message_id` | No | Message ID to quote-reply |
+
+---
+
+## Auto-Reply with OpenClaw
+
+The most powerful setup: every incoming WhatsApp DM triggers an isolated OpenClaw agent that reads conversation history and replies automatically.
+
+### Architecture
+
+```
+WhatsApp DM
+  → Bridge (agent mode, command)
+  → wa-notify.sh
+  → Fetches last 10 messages from bridge API for context
+  → openclaw gateway call cron.add (one-shot isolated agentTurn)
+  → OpenClaw agent processes message with conversation history
+  → openclaw-whatsapp send <JID> <reply>
+  → WhatsApp reply sent
+```
+
+Key design decisions:
+- **Isolated sessions** — each reply runs in its own session, no cross-talk
+- **One-shot cron** — `deleteAfterRun: true` means no leftover jobs
+- **Delivery: none** — replies go only to WhatsApp, not to your OpenClaw chat
+- **Conversation context** — fetches last 10 messages so the agent has context
+
+### Step-by-Step Setup
+
+#### 1. Install openclaw-whatsapp
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xs4m1337/openclaw-whatsapp/main/install.sh | bash
+```
+
+#### 2. Configure agent mode
+
+Create `config.yaml`:
+
+```yaml
+port: 8555
+data_dir: ~/.openclaw-whatsapp
+auto_reconnect: true
+reconnect_interval: 30s
+log_level: info
+
+agent:
+  enabled: true
+  mode: "command"
+  command: "/path/to/wa-notify.sh '{name}' '{message}' '{from}'"
+  ignore_from_me: true
+  dm_only: true
+  timeout: 30s
+```
+
+#### 3. Copy the relay script
+
+```bash
+cp scripts/wa-notify.sh /usr/local/bin/wa-notify.sh
+chmod +x /usr/local/bin/wa-notify.sh
+```
+
+Update the `command` path in your config to match.
+
+#### 4. Start the bridge
+
+```bash
+openclaw-whatsapp start -c config.yaml
+```
+
+#### 5. Scan QR
+
+Open http://localhost:8555/qr in your browser and scan with WhatsApp on your phone.
+
+#### 6. Test it
+
+Send a WhatsApp message to your linked number from another phone. You should see:
+- Bridge logs: `agent trigger: command mode`
+- A reply appearing within a few seconds
+
+### The Relay Script (wa-notify.sh)
+
+The included `scripts/wa-notify.sh` does the following:
+
+1. Receives `name`, `message`, and `JID` from the bridge
+2. Fetches the last 10 messages from `GET /chats/{jid}/messages?limit=10`
+3. Constructs a prompt with conversation history
+4. Calls `openclaw gateway call cron.add` to schedule an isolated agentTurn
+5. The agent replies via `openclaw-whatsapp send <JID> <reply>`
+
+You can customize the prompt, model (`anthropic/claude-sonnet-4-5` by default), and behavior.
+
+---
+
+## Security Guide for Public-Facing WhatsApp Agents
+
+Running an AI agent that auto-replies on WhatsApp requires careful security configuration. Here's what to consider:
+
+### 1. Rate Limiting
+
+WhatsApp spammers can trigger expensive API calls. Implement rate limiting in your relay script:
+
+```bash
+# Simple rate limit: max 10 messages per minute per sender
+RATE_FILE="/tmp/wa-rate-${JID}"
+COUNT=$(cat "$RATE_FILE" 2>/dev/null || echo 0)
+if [ "$COUNT" -gt 10 ]; then
+  exit 0  # silently drop
+fi
+echo $((COUNT + 1)) > "$RATE_FILE"
+```
+
+Or implement rate limiting at the HTTP endpoint level if using HTTP mode.
+
+### 2. Allowlist / Blocklist
+
+Restrict which phone numbers the agent responds to:
+
+```bash
+# In your relay script
+ALLOWED="+971558762351 +1234567890"
+if ! echo "$ALLOWED" | grep -q "${JID%%@*}"; then
+  exit 0
+fi
+```
+
+### 3. DM Only
+
+Set `dm_only: true` in your config to ignore group messages entirely. Groups can generate massive volumes and expose your agent to unknown users.
+
+```yaml
+agent:
+  dm_only: true
+```
+
+### 4. Ignore Own Messages
+
+Always set `ignore_from_me: true` to prevent infinite loops where the agent triggers on its own replies:
+
+```yaml
+agent:
+  ignore_from_me: true
+```
+
+### 5. Message Content Filtering
+
+Don't blindly pass message content to shell commands. The relay script should sanitize inputs:
+
+- Never use message content in `eval` or unquoted shell expansions
+- JSON-escape all user inputs (wa-notify.sh does this with Python)
+- Consider filtering out messages that look like prompt injection attempts
+
+### 6. Timeout Limits
+
+Set aggressive timeouts to prevent runaway processes:
+
+```yaml
+agent:
+  timeout: 30s  # kill the command after 30 seconds
+```
+
+The agentTurn in OpenClaw also has `timeoutSeconds: 20` as a backstop.
+
+### 7. Cost Control
+
+Auto-replies can get expensive fast. Mitigate costs:
+
+- Use cheaper models (`anthropic/claude-sonnet-4-5` instead of Opus)
+- Set `dm_only: true` to avoid group spam
+- Implement rate limiting (see above)
+- Monitor usage through your OpenClaw dashboard
+
+### 8. Webhook Authentication
+
+If using HTTP mode, add authentication to your endpoint:
+
+```yaml
+agent:
+  mode: "http"
+  http_url: "https://your-server.com/whatsapp-webhook"
+```
+
+Your HTTP endpoint should validate requests with a shared secret header or IP allowlist.
+
+### 9. Data Privacy
+
+- All messages are stored in a local SQLite database at `~/.openclaw-whatsapp/`
+- The bridge runs locally — no data leaves your machine unless you configure webhooks
+- Conversation history is passed to the AI model via the relay script
+- Consider data retention policies and GDPR compliance if serving EU users
+
+### 10. Network Security
+
+- The bridge REST API has **no authentication** by default
+- Bind to `localhost` only (default) — don't expose port 8555 to the internet
+- If you need remote access, put it behind a reverse proxy with auth
+
+---
+
 ## API Endpoints
 
 | Method | Path | Description |
@@ -65,68 +362,31 @@ journalctl --user -u openclaw-whatsapp -f
 | `GET` | `/chats/{jid}/messages` | Messages for specific chat |
 | `GET` | `/contacts` | List contacts |
 
-## Configuration
+## Webhook Payload
 
-Create `config.yaml` or use environment variables:
+Incoming messages are POSTed to your `webhook_url`:
 
-```yaml
-port: 8555
-data_dir: ~/.openclaw-whatsapp
-webhook_url: http://localhost:1337/webhook/whatsapp
-webhook_filters:
-  dm_only: false
-  ignore_groups: []
-auto_reconnect: true
-reconnect_interval: 30s
-log_level: info
-```
-
-### Agent Mode
-
-Trigger an OpenClaw agent whenever a WhatsApp message arrives. Supports command execution or HTTP POST:
-
-```yaml
-agent:
-  enabled: true
-  mode: "command"         # "command" or "http"
-  command: "openclaw gateway wake --text 'WhatsApp from {name} ({from}): {message}' --mode now"
-  http_url: ""            # POST endpoint for "http" mode
-  reply_endpoint: "http://localhost:8555/reply"  # so agent knows where to send replies
-  ignore_from_me: true    # don't trigger on own messages
-  dm_only: false          # only trigger on DMs, not groups
-  timeout: 30s            # command/HTTP timeout
-```
-
-**Command mode** — runs a shell command with template variables:
-- `{from}` — sender JID
-- `{name}` — sender push name
-- `{message}` — message text
-- `{chat_jid}` — chat JID
-- `{type}` — message type (text, image, etc.)
-- `{is_group}` — "true" or "false"
-- `{group_name}` — group name (empty for DMs)
-- `{message_id}` — WhatsApp message ID
-
-**HTTP mode** — POSTs JSON to `http_url` with all message details plus `reply_endpoint`.
-
-When agent triggers, a typing indicator is shown in the chat until the agent completes.
-
-Agents can reply via `POST /reply`:
 ```json
-{"to": "971558762351@s.whatsapp.net", "message": "Hello!", "quote_message_id": "optional"}
+{
+  "from": "971558762351@s.whatsapp.net",
+  "name": "Sam",
+  "message": "Hey!",
+  "timestamp": 1708387200,
+  "type": "text",
+  "media_url": "",
+  "chat_type": "dm",
+  "group_name": "",
+  "message_id": "ABC123"
+}
 ```
-
-Environment variables: `OC_WA_AGENT_ENABLED`, `OC_WA_AGENT_MODE`, `OC_WA_AGENT_COMMAND`, `OC_WA_AGENT_HTTP_URL`, `OC_WA_AGENT_REPLY_ENDPOINT`, `OC_WA_AGENT_TIMEOUT`.
-
-Environment variables use `OC_WA_` prefix: `OC_WA_PORT`, `OC_WA_WEBHOOK_URL`, etc.
 
 ## CLI
 
 ```bash
-openclaw-whatsapp start [-c config.yaml]  # Start service
-openclaw-whatsapp status [--addr URL]      # Check connection
-openclaw-whatsapp send NUMBER MESSAGE      # Quick send
-openclaw-whatsapp stop                     # Stop service
+openclaw-whatsapp start [-c config.yaml]  # Start the bridge
+openclaw-whatsapp status [--addr URL]      # Check connection status
+openclaw-whatsapp send NUMBER MESSAGE      # Send a message
+openclaw-whatsapp stop                     # Stop the bridge
 openclaw-whatsapp version                  # Print version
 ```
 
@@ -143,22 +403,6 @@ make clean              # Remove build artifacts
 ```bash
 docker build -t openclaw-whatsapp .
 docker run -p 8555:8555 -v wa-data:/app/data openclaw-whatsapp
-```
-
-## Webhook Payload
-
-```json
-{
-  "from": "971558762351@s.whatsapp.net",
-  "name": "Sam",
-  "message": "Hey!",
-  "timestamp": 1708387200,
-  "type": "text",
-  "media_url": "",
-  "chat_type": "dm",
-  "group_name": "",
-  "message_id": "ABC123"
-}
 ```
 
 ## License

@@ -20,7 +20,7 @@ import (
 	"github.com/openclaw/whatsapp/store"
 )
 
-var version = "dev"
+var version = "v0.2.0"
 
 func main() {
 	root := &cobra.Command{
