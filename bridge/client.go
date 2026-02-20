@@ -243,12 +243,18 @@ func (c *Client) HasSession() bool {
 
 // GetStatus returns the current connection status. It cross-checks the actual
 // whatsmeow connection state against the stored status for accuracy.
+// A device must be paired (Store.ID != nil) AND the websocket connected to
+// count as StatusConnected. An open websocket without a paired device means
+// we're waiting for QR scan.
 func (c *Client) GetStatus() Status {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if c.client != nil && c.client.IsConnected() {
+	if c.client != nil && c.client.IsConnected() && c.client.Store.ID != nil {
 		return StatusConnected
+	}
+	if c.client != nil && c.client.IsConnected() && c.client.Store.ID == nil {
+		return StatusConnecting // websocket open but waiting for QR scan
 	}
 	if c.status == StatusConnecting {
 		return StatusConnecting
