@@ -2,17 +2,38 @@
 
 WhatsApp bridge for [OpenClaw](https://openclaw.ai) agents. Single Go binary — start, scan QR, done.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/openclaw/whatsapp/main/install.sh | bash
+```
+
+Or build from source:
+
+```bash
+make build
+sudo make install
+```
+
 ## Quick Start
 
 ```bash
 # Start the bridge
-./openclaw-whatsapp start
+openclaw-whatsapp start
 
 # Open browser, scan QR
 open http://localhost:8555/qr
 
 # Send a message
-./openclaw-whatsapp send "+1234567890" "Hello from OpenClaw!"
+openclaw-whatsapp send "+1234567890" "Hello from OpenClaw!"
+```
+
+## Run as Service (systemd)
+
+```bash
+make install-service
+systemctl --user start openclaw-whatsapp
+journalctl --user -u openclaw-whatsapp -f
 ```
 
 ## Features
@@ -24,7 +45,7 @@ open http://localhost:8555/qr
 - **Full-text search** — SQLite FTS5 across all messages
 - **Media handling** — auto-downloads images, videos, audio, documents
 - **Message deduplication** — no duplicate webhooks
-- **Single binary** — no runtime dependencies
+- **Single binary** — pure Go, no CGO, cross-compiles everywhere
 
 ## API Endpoints
 
@@ -73,7 +94,9 @@ openclaw-whatsapp version                  # Print version
 ## Build
 
 ```bash
-CGO_ENABLED=1 go build -tags "sqlite_fts5" -ldflags="-s -w" -o openclaw-whatsapp .
+make build              # Build for current platform
+make release            # Cross-compile all platforms
+make clean              # Remove build artifacts
 ```
 
 ## Docker

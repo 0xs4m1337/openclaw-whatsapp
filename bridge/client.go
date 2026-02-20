@@ -17,7 +17,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Status represents the current connection state of the WhatsApp client.
@@ -55,10 +55,10 @@ func NewClient(dataDir string, log *slog.Logger) (*Client, error) {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
 
-	dsn := fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL",
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)",
 		filepath.Join(storeDir, "whatsapp.db"))
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", dsn, waLog.Noop)
+	container, err := sqlstore.New(context.Background(), "sqlite", dsn, waLog.Noop)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlstore: %w", err)
 	}

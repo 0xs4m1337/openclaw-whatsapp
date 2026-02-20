@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Message represents a single WhatsApp message stored in the database.
@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 // ready-to-use MessageStore.
 func NewMessageStore(dbPath string) (*MessageStore, error) {
 	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
