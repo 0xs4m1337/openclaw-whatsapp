@@ -1,42 +1,49 @@
 #!/bin/bash
-# Bridge agent trigger → spawns isolated agentTurn that auto-replies on WhatsApp
-# Called with: wa-notify.sh '{name}' '{message}' '{chat_jid}'
-# System prompt comes via OC_WA_SYSTEM_PROMPT env var (set by bridge)
-NAME="$1"
-MSG="$2"
-JID="$3"
+# WhatsApp -> OpenClaw relay (safe mode)
+# Enqueue fast, process with single detached worker.
+# Args: name, message, chat_jid, message_id(optional)
+
+set -u
+
+NAME="${1:-Unknown}"
+MSG="${2:-}"
+JID="${3:-}"
+MESSAGE_ID="${4:-}"
 SYSTEM_PROMPT="${OC_WA_SYSTEM_PROMPT:-You are a helpful WhatsApp assistant. Be concise and natural.}"
 
-# JSON-escape
-MSG_ESC=$(printf '%s' "$MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-NAME_ESC=$(printf '%s' "$NAME" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-JID_ESC=$(printf '%s' "$JID" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-SP_ESC=$(printf '%s' "$SYSTEM_PROMPT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
+[ -z "$JID" ] && exit 0
+[ -z "$MSG" ] && exit 0
 
-# Fetch last 10 messages for conversation context
-HISTORY=$(curl -s "http://localhost:8555/chats/${JID}/messages?limit=10" | python3 -c "
-import json,sys
-msgs = json.loads(sys.stdin.read())
-lines = []
-for m in reversed(msgs):
-    sender = 'You' if m.get('from','') == '' else '${NAME_ESC}'
-    lines.append(f'{sender}: {m[\"content\"]}')
-print('\\\\n'.join(lines))
-" 2>/dev/null)
+DATA_DIR="${OC_WA_AGENT_DATA_DIR:-/tmp/openclaw-wa-agent}"
+QUEUE="$DATA_DIR/queue.jsonl"
+SEEN_IDS="$DATA_DIR/seen_message_ids.txt"
+mkdir -p "$DATA_DIR"
+touch "$QUEUE" "$SEEN_IDS"
 
-AT=$(date -u -d '+2 seconds' +%Y-%m-%dT%H:%M:%SZ)
+# Dedupe by message id (if provided)
+if [ -n "$MESSAGE_ID" ]; then
+  if grep -Fqx "$MESSAGE_ID" "$SEEN_IDS" 2>/dev/null; then
+    exit 0
+  fi
+  echo "$MESSAGE_ID" >> "$SEEN_IDS"
+  tail -n 5000 "$SEEN_IDS" > "$SEEN_IDS.tmp" && mv "$SEEN_IDS.tmp" "$SEEN_IDS"
+fi
 
-PROMPT="${SP_ESC}\\n\\nRecent conversation:\\n${HISTORY}\\n\\nNew message from ${NAME_ESC}: \\\"${MSG_ESC}\\\"\\n\\nReply by running:\\nexec command: openclaw-whatsapp send \\\"${JID_ESC}\\\" \\\"YOUR_REPLY_HERE\\\"\\n\\nDo NOT announce the result — just send the reply and stop."
+# Append one JSON event to queue.
+python3 - "$NAME" "$MSG" "$JID" "$MESSAGE_ID" "$SYSTEM_PROMPT" >> "$QUEUE" <<'PY'
+import json,sys,time
+name,msg,jid,message_id,system_prompt = sys.argv[1:]
+print(json.dumps({
+  "ts": int(time.time()),
+  "name": name,
+  "message": msg,
+  "jid": jid,
+  "message_id": message_id,
+  "system_prompt": system_prompt,
+}, ensure_ascii=False))
+PY
 
-openclaw gateway call cron.add --params "{
-  \"job\": {
-    \"name\": \"wa-reply\",
-    \"schedule\": {\"kind\": \"at\", \"at\": \"${AT}\"},
-    \"payload\": {\"kind\": \"agentTurn\", \"message\": \"${PROMPT}\", \"model\": \"anthropic/claude-sonnet-4-5\", \"timeoutSeconds\": 20},
-    \"sessionTarget\": \"isolated\",
-    \"delivery\": {\"mode\": \"none\"},
-    \"deleteAfterRun\": true
-  }
-}" --timeout 10000 2>/dev/null
+# Detach worker. It self-locks, so parallel launches are safe.
+nohup /home/oussama/dev/openclaw-whatsapp/scripts/wa-notify-worker.sh >/dev/null 2>&1 &
 
 exit 0

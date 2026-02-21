@@ -192,19 +192,19 @@ The most powerful setup: every incoming WhatsApp DM triggers an isolated OpenCla
 ```
 WhatsApp DM
   → Bridge (agent mode, command)
-  → wa-notify.sh
+  → wa-notify.sh (enqueue + dedupe)
+  → wa-notify-worker.sh (background, single-instance)
   → Fetches last 10 messages from bridge API for context
-  → openclaw gateway call cron.add (one-shot isolated agentTurn)
-  → OpenClaw agent processes message with conversation history
+  → openclaw agent (processes message)
   → openclaw-whatsapp send <JID> <reply>
   → WhatsApp reply sent
 ```
 
 Key design decisions:
-- **Isolated sessions** — each reply runs in its own session, no cross-talk
-- **One-shot cron** — `deleteAfterRun: true` means no leftover jobs
-- **Delivery: none** — replies go only to WhatsApp, not to your OpenClaw chat
-- **Conversation context** — fetches last 10 messages so the agent has context
+- **Queue-based** — fast enqueue, async processing, no blocked bridge
+- **Deduplication** — message IDs tracked to prevent double-replies
+- **Single worker** — file-locked, sequential processing, no race conditions
+- **Conversation context** — fetches last 10 messages so the agent has history
 
 ### Step-by-Step Setup
 
@@ -234,14 +234,18 @@ agent:
   timeout: 30s
 ```
 
-#### 3. Copy the relay script
+#### 3. Copy the relay scripts
 
 ```bash
 cp scripts/wa-notify.sh /usr/local/bin/wa-notify.sh
-chmod +x /usr/local/bin/wa-notify.sh
+cp scripts/wa-notify-worker.sh /usr/local/bin/wa-notify-worker.sh
+chmod +x /usr/local/bin/wa-notify.sh /usr/local/bin/wa-notify-worker.sh
 ```
 
-Update the `command` path in your config to match.
+Update the paths in the scripts and config:
+- In `wa-notify.sh`: update the path to `wa-notify-worker.sh`
+- In `wa-notify-worker.sh`: update the `PATH` export to include your `openclaw` binary
+- In `config.yaml`: update the `command` path
 
 #### 4. Start the bridge
 
@@ -259,17 +263,44 @@ Send a WhatsApp message to your linked number from another phone. You should see
 - Bridge logs: `agent trigger: command mode`
 - A reply appearing within a few seconds
 
-### The Relay Script (wa-notify.sh)
+### The Relay Scripts
 
-The included `scripts/wa-notify.sh` does the following:
+The auto-reply system uses a **queue-based architecture** with two scripts:
 
-1. Receives `name`, `message`, and `JID` from the bridge
-2. Fetches the last 10 messages from `GET /chats/{jid}/messages?limit=10`
-3. Constructs a prompt with conversation history
-4. Calls `openclaw gateway call cron.add` to schedule an isolated agentTurn
-5. The agent replies via `openclaw-whatsapp send <JID> <reply>`
+#### wa-notify.sh (Enqueuer)
 
-You can customize the prompt, model (`anthropic/claude-sonnet-4-5` by default), and behavior.
+Fast, non-blocking script called by the bridge:
+
+1. Receives `name`, `message`, `JID`, and `message_id` from the bridge
+2. Deduplicates by message ID (prevents double-processing)
+3. Appends message to a JSONL queue file
+4. Spawns the worker in background (if not already running)
+5. Exits immediately — bridge doesn't wait
+
+#### wa-notify-worker.sh (Processor)
+
+Single-instance worker that processes the queue:
+
+1. Acquires a file lock (only one worker runs globally)
+2. Reads messages from queue one at a time
+3. Fetches last 10 messages from `GET /chats/{jid}/messages?limit=10` for context
+4. Calls `openclaw agent` to process and reply
+5. Loops until queue is empty
+
+This design ensures:
+- **Fast bridge response** — enqueue returns instantly
+- **No duplicate replies** — message ID deduplication
+- **Sequential processing** — one reply at a time, no race conditions
+- **Crash resilience** — queue persists across restarts
+
+### Customization
+
+Edit `wa-notify-worker.sh` to customize:
+- **PATH** — set to include your `openclaw` binary location
+- **Timeout** — default 45s hard timeout per message
+- **Agent** — uses `--agent main` by default
+
+Data files are stored in `/tmp/openclaw-wa-agent/` by default (override with `OC_WA_AGENT_DATA_DIR`).
 
 ---
 
