@@ -3,7 +3,20 @@
 set -u
 
 # Ensure PATH includes node/openclaw binaries
-export PATH="/home/oussama/.nvm/versions/node/v22.22.0/bin:$PATH"
+# Override with OC_WA_OPENCLAW_PATH if openclaw is in a non-standard location
+if [ -n "${OC_WA_OPENCLAW_PATH:-}" ]; then
+  export PATH="$OC_WA_OPENCLAW_PATH:$PATH"
+elif [ -d "$HOME/.nvm/versions/node" ]; then
+  # Auto-detect nvm node path
+  NODE_BIN=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1)
+  [ -n "$NODE_BIN" ] && export PATH="$NODE_BIN:$PATH"
+fi
+
+# Verify openclaw is available
+if ! command -v openclaw &>/dev/null; then
+  echo "[$(date -Iseconds)] ERROR: openclaw not found in PATH. Set OC_WA_OPENCLAW_PATH." >> "${OC_WA_AGENT_DATA_DIR:-/tmp/openclaw-wa-agent}/worker.log"
+  exit 1
+fi
 
 DATA_DIR="${OC_WA_AGENT_DATA_DIR:-/tmp/openclaw-wa-agent}"
 QUEUE="$DATA_DIR/queue.jsonl"

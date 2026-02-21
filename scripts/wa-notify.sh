@@ -44,6 +44,9 @@ print(json.dumps({
 PY
 
 # Detach worker. It self-locks, so parallel launches are safe.
-nohup /home/oussama/dev/openclaw-whatsapp/scripts/wa-notify-worker.sh >/dev/null 2>&1 &
+# Worker path: configurable via OC_WA_WORKER_PATH, or same directory as this script
+WORKER_PATH="${OC_WA_WORKER_PATH:-$(dirname "$(realpath "$0")")/wa-notify-worker.sh}"
+[ ! -x "$WORKER_PATH" ] && WORKER_PATH="/usr/local/bin/wa-notify-worker.sh"
+nohup "$WORKER_PATH" >/dev/null 2>&1 &
 
 exit 0
