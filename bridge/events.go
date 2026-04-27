@@ -192,10 +192,15 @@ func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageS
 		MessageID: msg.Info.ID,
 	}
 
-	if isGroup && !client.IsCreatedGroup(chatJID) {
-		log.Debug("skipping webhook for unmanaged group", "group_jid", chatJID, "message_id", msg.Info.ID)
-	} else if err := webhook.Send(payload); err != nil {
-		log.Error("failed to send webhook", "error", err, "message_id", msg.Info.ID)
+	// Skip unknown messages with no content (system events, status updates, etc.)
+	if msgType == "unknown" && content == "" {
+		log.Debug("skipping empty unknown message", "chat_jid", chatJID, "message_id", msg.Info.ID)
+	} else if isGroup && client.IsCreatedGroup(chatJID) {
+		if err := webhook.Send(payload); err != nil {
+			log.Error("failed to send webhook", "error", err, "message_id", msg.Info.ID)
+		}
+	} else {
+		log.Debug("skipping webhook for non-managed chat", "chat_jid", chatJID, "is_group", isGroup, "message_id", msg.Info.ID)
 	}
 
 	// Trigger agent (async — does not block).
