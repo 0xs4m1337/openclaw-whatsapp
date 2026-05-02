@@ -38,6 +38,7 @@ journalctl --user -u openclaw-whatsapp -f
 
 ## Features
 
+- **Group creation** — create WhatsApp groups from the HTTP API
 - **Always-on connection** — auto-reconnect with exponential backoff
 - **REST API** — send text/files, read messages, search, list chats/contacts
 - **QR Web UI** — scan from browser, auto-refreshes every 3s
@@ -443,6 +444,7 @@ Incoming messages are POSTed to your `webhook_url`:
   "from": "971558762351@s.whatsapp.net",
   "name": "Sam",
   "message": "Hey!",
+  "chat_jid": "120363408771672765@g.us",
   "timestamp": 1708387200,
   "type": "text",
   "media_url": "",

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
 	"github.com/openclaw/whatsapp/api"
@@ -93,6 +94,8 @@ func main() {
 
 // runStart is the main service entrypoint that wires all components together.
 func runStart(configPath string) error {
+	_ = godotenv.Load()
+
 	// 1. Load config
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -139,7 +142,12 @@ func runStart(configPath string) error {
 		DMOnly:       cfg.WebhookFilters.DMOnly,
 		IgnoreGroups: cfg.WebhookFilters.IgnoreGroups,
 	}
-	webhook := bridge.NewWebhookSender(cfg.WebhookURL, webhookFilters, log)
+	webhookURL := cfg.WebhookURL
+	if webhookURL == "" {
+		webhookURL = "http://127.0.0.1:8000/webhook/whatsapp"
+		log.Info("using default webhook url", "url", webhookURL)
+	}
+	webhook := bridge.NewWebhookSender(webhookURL, webhookFilters, log)
 
 	// 5b. Create agent trigger
 	agent := bridge.NewAgentTrigger(

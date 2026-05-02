@@ -48,6 +48,7 @@ openclaw-whatsapp (Go binary)
 - `POST /logout` — unlink device
 
 ### Messaging
+- `POST /groups` — `{"name": "Team", "participants": ["+971...", "+972..."]}`
 - `POST /send/text` — `{"to": "+971...", "message": "hello"}`
 - `POST /send/file` — multipart: file + to + caption
 - `GET /messages?chat=JID&limit=50` — get recent messages from a chat
@@ -60,7 +61,7 @@ openclaw-whatsapp (Go binary)
 
 ### Webhooks
 - Incoming messages POST to configured webhook URL
-- Payload: `{"from": "+971...", "name": "Ali", "message": "...", "timestamp": "...", "type": "text|image|document|audio", "media_url": "...", "chat_type": "dm|group", "group_name": "..."}`
+- Payload: `{"from": "+971...", "name": "Ali", "message": "...", "chat_jid": "...", "timestamp": "...", "type": "text|image|document|audio", "media_url": "...", "chat_type": "dm|group", "group_name": "..."}`
 - Configurable filters: DM only, specific numbers, keywords
 
 ## Configuration (config.yaml or env vars)

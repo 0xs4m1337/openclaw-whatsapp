@@ -16,6 +16,8 @@ type WebhookPayload struct {
 	From      string `json:"from"`
 	Name      string `json:"name,omitempty"`
 	Message   string `json:"message"`
+	ChatJID   string `json:"chat_jid"`
+	GroupID   string `json:"group_id,omitempty"`
 	Timestamp int64  `json:"timestamp"`
 	Type      string `json:"type"`
 	MediaURL  string `json:"media_url,omitempty"`
