@@ -444,6 +444,7 @@ Incoming messages are POSTed to your `webhook_url`:
   "from": "971558762351@s.whatsapp.net",
   "name": "Sam",
   "message": "Hey!",
+  "chat_jid": "120363408771672765@g.us",
   "timestamp": 1708387200,
   "type": "text",
   "media_url": "",

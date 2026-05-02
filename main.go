@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
 	"github.com/openclaw/whatsapp/api"
@@ -93,6 +94,8 @@ func main() {
 
 // runStart is the main service entrypoint that wires all components together.
 func runStart(configPath string) error {
+	_ = godotenv.Load()
+
 	// 1. Load config
 	cfg, err := config.Load(configPath)
 	if err != nil {

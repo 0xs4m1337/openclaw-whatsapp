@@ -139,6 +139,13 @@ func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageS
 	senderJID := msg.Info.Sender.String()
 	chatJID := msg.Info.Chat.String()
 	senderName := msg.Info.PushName
+	senderJIDForWebhook := senderJID
+	if strings.HasSuffix(senderJID, "@lid") {
+		if resolved, ok := resolveSenderJID(client, senderName, log); ok {
+			senderJIDForWebhook = resolved
+			log.Debug("resolved lid sender JID", "from", senderJID, "resolved", resolved)
+		}
+	}
 
 	var groupName string
 	if isGroup {
@@ -180,9 +187,10 @@ func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageS
 	}
 
 	payload := &WebhookPayload{
-		From:      chatJID,
+		From:      senderJIDForWebhook,
 		Name:      senderName,
 		Message:   content,
+		ChatJID:   chatJID,
 		GroupID:   groupID,
 		Timestamp: msg.Info.Timestamp.Unix(),
 		Type:      msgType,
@@ -215,6 +223,53 @@ func handleMessage(client *Client, msg *events.Message, msgStore *store.MessageS
 		"chat", chatJID,
 		"is_group", isGroup,
 	)
+}
+
+func resolveSenderJID(client *Client, senderName string, log *slog.Logger) (string, bool) {
+	senderName = strings.TrimSpace(senderName)
+	if senderName == "" {
+		return "", false
+	}
+
+	wc := client.GetClient()
+	if wc == nil || wc.Store == nil || wc.Store.Contacts == nil {
+		return "", false
+	}
+
+	contacts, err := wc.Store.Contacts.GetAllContacts(context.Background())
+	if err != nil {
+		log.Debug("failed to load contacts for lid resolve", "error", err)
+		return "", false
+	}
+
+	var match string
+	for jid, info := range contacts {
+		name := info.PushName
+		if name == "" {
+			name = info.FullName
+		}
+		if name == "" {
+			name = info.BusinessName
+		}
+		if name == "" {
+			continue
+		}
+		if !strings.EqualFold(name, senderName) {
+			continue
+		}
+
+		candidate := jid.String()
+		if match != "" && match != candidate {
+			return "", false
+		}
+		match = candidate
+	}
+
+	if match == "" || !strings.HasSuffix(match, "@s.whatsapp.net") {
+		return "", false
+	}
+
+	return match, true
 }
 
 // downloadMedia downloads media from a WhatsApp message and saves it to disk.
