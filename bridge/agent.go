@@ -98,6 +98,14 @@ func (a *AgentTrigger) Trigger(client *Client, payload *WebhookPayload) {
 		a.log.Debug("agent skipping group message (dm_only)", "message_id", payload.MessageID)
 		return
 	}
+	if payload.ChatType != "group" {
+		a.log.Debug("agent skipping non-group message", "message_id", payload.MessageID)
+		return
+	}
+	if !client.IsCreatedGroup(payload.From) {
+		a.log.Debug("agent skipping non-managed group", "chat_jid", payload.ChatJID, "message_id", payload.MessageID)
+		return
+	}
 
 	sender := normalizeNumber(payload.From)
 	if len(a.blocklist) > 0 && a.blocklist[sender] {
@@ -110,11 +118,11 @@ func (a *AgentTrigger) Trigger(client *Client, payload *WebhookPayload) {
 	}
 
 	// Send typing indicator.
-	a.sendTyping(client, payload.From)
+	a.sendTyping(client, payload.ChatJID)
 
 	// Run async — don't block the event loop.
 	go func() {
-		defer a.clearTyping(client, payload.From)
+		defer a.clearTyping(client, payload.ChatJID)
 
 		switch a.mode {
 		case "http":
@@ -161,7 +169,7 @@ func (a *AgentTrigger) triggerHTTP(payload *WebhookPayload) {
 		From:          payload.From,
 		Name:          payload.Name,
 		Message:       payload.Message,
-		ChatJID:       payload.From,
+		ChatJID:       payload.ChatJID,
 		Type:          payload.Type,
 		IsGroup:       payload.ChatType == "group",
 		GroupName:     payload.GroupName,
@@ -215,7 +223,7 @@ func (a *AgentTrigger) expandTemplate(tmpl string, p *WebhookPayload) string {
 		"{from}":          shellEscape(p.From),
 		"{name}":          shellEscape(p.Name),
 		"{message}":       shellEscape(p.Message),
-		"{chat_jid}":      shellEscape(p.From),
+		"{chat_jid}":      shellEscape(p.ChatJID),
 		"{type}":          shellEscape(p.Type),
 		"{is_group}":      isGroup,
 		"{group_name}":    shellEscape(p.GroupName),
